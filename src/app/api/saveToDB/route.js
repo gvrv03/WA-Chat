@@ -11,6 +11,7 @@ export const POST = async (req) => {
         { status: 400 }
       );
     }
+    
     const { db } = await connectToDatabase();
     const collection = db.collection(phoneID); // replace with your collection name
 
