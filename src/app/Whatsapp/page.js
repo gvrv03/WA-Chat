@@ -32,7 +32,7 @@ export default function Home() {
       setLoading(true);
       const res = await FetchDataToCollection(
         `CPID${selectedAppDetails?.MPhoneNoId}`,
-        {}
+        {} //Query
       );
       setChats(res || []);
       setDisplayedChats((res || []).slice(0, BATCH_SIZE));
@@ -107,7 +107,7 @@ export default function Home() {
 
               <div className="md:max-w-[60%] max-w-[80%] flex flex-col gap-1">
                 <div
-                  className={`px-3 py-2 rounded-lg text-sm leading-relaxed break-words ${
+                  className={`px-3 py-2 rounded-lg text-xs leading-relaxed break-words ${
                     isHuman
                       ? "bg-muted text-foreground rounded-bl-none"
                       : "bg-primary/20 text-white rounded-br-none"

@@ -3,41 +3,76 @@ import { NextResponse } from "next/server";
 
 export const POST = async (req) => {
   try {
-    const { sessionId, newMessage,phoneID } = await req.json(); // Receive data from frontend
+    const { sessionId, newMessage, phoneID, waPhoneId, userName, isAIControl } =
+      await req.json();
 
-    if (!sessionId || !newMessage) {
+    // ✅ Basic validation
+    if (!sessionId || !newMessage || !phoneID) {
       return NextResponse.json(
-        { error: "Missing sessionId or message" },
+        { error: "Missing sessionId, phoneID or newMessage!" },
         { status: 400 }
       );
     }
-    
-    const { db } = await connectToDatabase();
-    const collection = db.collection(phoneID); // replace with your collection name
 
-    // Push new message to Messages array using MongoDB $push
-    const updateResult = await collection.updateOne(
-      { sessionId: sessionId }, // Find user by sessionId
-      {
-        $push: {
-          Messages: {
-            id: newMessage.id,
-            isUser: newMessage.isUser,
-            textBody: newMessage.textBody,
-            type: newMessage.type,
-            date: newMessage.date,
-            time: newMessage.time,
+    // ✅ Connect to DB and collection (per phoneID)
+    const { db } = await connectToDatabase();
+    const collection = db.collection(phoneID);
+
+    // ✅ Check if session already exists
+    const existingSession = await collection.findOne({ sessionId });
+
+    if (existingSession) {
+      // ✅ Append new message to existing user
+      await collection.updateOne(
+        { sessionId },
+        {
+          $push: {
+            Messages: {
+              id: newMessage.id,
+              isUser: newMessage.isUser,
+              textBody: newMessage.textBody,
+              type: newMessage.type,
+              date: newMessage.date,
+              time: newMessage.time,
+            },
           },
+        }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: "Message added successfully to existing user!",
+      });
+    }
+
+    // ✅ If session does not exist — Create new user record
+    const newUserData = {
+      sessionId,
+      waPhoneId: waPhoneId || "", // Default empty if not sent
+      userName: userName || "Unknown User",
+      Messages: [
+        {
+          id: newMessage.id,
+          isUser: newMessage.isUser,
+          textBody: newMessage.textBody,
+          type: newMessage.type,
+          date: newMessage.date,
+          time: newMessage.time,
         },
-      }
-    );
+      ],
+      isAIControl: isAIControl ?? true, // Default to true if undefined
+    };
+
+    await collection.insertOne(newUserData);
 
     return NextResponse.json({
       success: true,
-      message: "Message added successfully!",
-      updateResult,
+      message: "New user session created and message saved!",
     });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Server Error" },
+      { status: 500 }
+    );
   }
 };
