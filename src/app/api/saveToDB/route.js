@@ -42,6 +42,7 @@ export const POST = async (req) => {
       return NextResponse.json({
         success: true,
         message: "Message added successfully to existing user!",
+        isAIControl: existingSession?.isAIControl,
       });
     }
 
@@ -63,11 +64,12 @@ export const POST = async (req) => {
       isAIControl: isAIControl ?? true, // Default to true if undefined
     };
 
-    await collection.insertOne(newUserData);
-
+    const res = await collection.insertOne(newUserData);
+    const findThat = await collection.findOne({ _id: res?.insertedId });
     return NextResponse.json({
       success: true,
       message: "New user session created and message saved!",
+      isAIControl: findThat?.isAIControl,
     });
   } catch (error) {
     return NextResponse.json(
