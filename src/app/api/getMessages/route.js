@@ -4,12 +4,11 @@ import { connectToDatabase } from "@/config/MongoDB";
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
-
     const sessionId = searchParams.get("sessionId");
-    const collectionName = searchParams.get("collection") || "sessions"; // Default fallback
+    const collectionName = searchParams.get("collection");
 
-    if (!sessionId) {
-      return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    if (!sessionId || !collectionName) {
+      return NextResponse.json({ error: "Missing sessionId or collection" }, { status: 400 });
     }
 
     const { db } = await connectToDatabase();

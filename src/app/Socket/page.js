@@ -10,6 +10,7 @@ export default function LiveChat({ sessionId }) {
     const data = await res.json();
     setMessages(data?.Messages || []);
   };
+console.log(messages);
 
   useEffect(() => {
     fetchMessages(); // Initial fetch
