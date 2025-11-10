@@ -2,23 +2,52 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { Textarea } from "../ui/textarea";
 import { Button } from "../ui/button";
-import { ArrowLeft, Bot, User, User2, Loader2, Brain } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  User,
+  User2,
+  Loader2,
+  Brain,
+  Search,
+  X,
+  ChevronUp,
+  ChevronDown,
+  ArrowDown,
+  ArrowUp,
+} from "lucide-react";
 import { UpdateDocument } from "@/actions/CRUDAction";
 import { useStore } from "@/context/StoreContext";
 
-const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat }) => {
+const ChatMenu = ({
+  selectedChat,
+  setSelectedChat,
+  formatMessage,
+  setShowChat,
+}) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [assigningToAI, setAssigningToAI] = useState(false);
   const [takingControl, setTakingControl] = useState(false);
   const [message, setMessage] = useState("");
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchedIndexes, setMatchedIndexes] = useState([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [showScrollButtons, setShowScrollButtons] = useState(false);
   const messagesEndRef = useRef(null);
+  const messageContainerRef = useRef(null);
   const { selectedAppDetails } = useStore();
 
   /** ✅ Smooth Scroll to bottom */
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
+
+  /** ✅ Scroll to Top */
+  const scrollToTop = () => {
+    messageContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   /** ✅ Auto-scroll when messages change */
   useEffect(() => {
@@ -27,6 +56,22 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
       scrollToBottom();
     }
   }, [selectedChat?.Messages?.length, scrollToBottom]);
+
+  /** ✅ Track scroll position for scroll buttons */
+  useEffect(() => {
+    const container = messageContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const threshold = 300;
+      const scrolled =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      setShowScrollButtons(scrolled > threshold || container.scrollTop > threshold);
+    };
+
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
@@ -128,7 +173,45 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
     }
   };
 
-  /** ✅ Skeleton while loading */
+  /** ✅ Search Handler */
+  const handleSearch = (query) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setMatchedIndexes([]);
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    const matches = selectedChat.Messages.reduce((acc, msg, i) => {
+      if (msg.textBody?.toLowerCase().includes(query.toLowerCase())) acc.push(i);
+      return acc;
+    }, []);
+
+    setMatchedIndexes(matches);
+    setCurrentMatchIndex(0);
+
+    if (matches.length > 0) scrollToMessage(matches[0]);
+  };
+
+  /** ✅ Scroll to specific message */
+  const scrollToMessage = (index) => {
+    const element = document.getElementById(`msg-${index}`);
+    if (element) element.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  /** ✅ Navigate search results */
+  const navigateSearch = (direction) => {
+    if (matchedIndexes.length === 0) return;
+    let newIndex =
+      direction === "next"
+        ? (currentMatchIndex + 1) % matchedIndexes.length
+        : (currentMatchIndex - 1 + matchedIndexes.length) % matchedIndexes.length;
+
+    setCurrentMatchIndex(newIndex);
+    scrollToMessage(matchedIndexes[newIndex]);
+  };
+
+  /** ✅ Skeleton */
   const ChatSkeleton = () => (
     <div className="space-y-4 animate-pulse p-5">
       {[...Array(5)].map((_, i) => (
@@ -157,52 +240,116 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
         isMobile ? "fixed inset-0 z-50" : ""
       } transition-all duration-300 ease-in-out`}
     >
-      {/* ✅ Header */}
-      <div className="flex items-center gap-3 p-4 border-b bg-secondary sticky top-0 z-10">
-        {isMobile && (
-          <button onClick={handleBack} className="hover:opacity-80 transition">
-            <ArrowLeft size={22} />
-          </button>
-        )}
-        <div className="w-10 h-10 bg-primary/10 rounded-full grid place-items-center">
-          <User />
-        </div>
-        <div className="flex flex-col overflow-hidden">
-          <p className="font-medium truncate">
-            {selectedChat.userName || `+${selectedChat.sessionId}`}
-          </p>
-          <span
-            className={`text-xs flex items-center gap-1 transition-all ${
-              selectedChat.isAIControl ? "text-primary" : "text-green-600"
-            }`}
-          >
-            {selectedChat.isAIControl ? (
-              <>
-                <Bot size={14} /> Bot Active
-              </>
-            ) : (
-              <>
-                <User2 size={14} /> Human Active
-              </>
+      {/* ✅ Header Section */}
+      {!searchActive ? (
+        <div className="flex items-center justify-between p-4 border-b bg-secondary sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            {isMobile && (
+              <button onClick={handleBack} className="hover:opacity-80 transition">
+                <ArrowLeft size={22} />
+              </button>
             )}
-          </span>
+            <div className="w-10 h-10 bg-primary/10 rounded-full grid place-items-center">
+              <User />
+            </div>
+            <div className="flex flex-col overflow-hidden">
+              <p className="font-medium truncate">
+                {selectedChat.userName || `+${selectedChat.sessionId}`}
+              </p>
+              <span
+                className={`text-xs flex items-center gap-1 transition-all ${
+                  selectedChat.isAIControl ? "text-primary" : "text-green-600"
+                }`}
+              >
+                {selectedChat.isAIControl ? (
+                  <>
+                    <Bot size={14} /> Bot Active
+                  </>
+                ) : (
+                  <>
+                    <User2 size={14} /> Human Active
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+
+          {/* 🔍 Search Button */}
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => setSearchActive(true)}
+            className="hover:bg-primary/10 rounded-full"
+          >
+            <Search size={18} />
+          </Button>
         </div>
-      </div>
+      ) : (
+        /* ✅ Search Bar Fixed at Top */
+        <div className="flex items-center justify-between gap-2 p-3 border-b bg-background sticky top-0 z-30 shadow-sm">
+          <div className="flex items-center gap-2 flex-1 bg-secondary/40 rounded-full px-3 py-1">
+            <Search size={16} className="text-primary" />
+            <input
+              type="text"
+              placeholder="Search messages..."
+              value={searchQuery}
+              onChange={(e) => handleSearch(e.target.value)}
+              className="bg-transparent text-sm outline-none w-full"
+              autoFocus
+            />
+            {matchedIndexes.length > 0 && (
+              <span className="text-xs text-muted-foreground mr-2">
+                {currentMatchIndex + 1}/{matchedIndexes.length}
+              </span>
+            )}
+            <div className="flex gap-1">
+              <button
+                onClick={() => navigateSearch("prev")}
+                disabled={matchedIndexes.length === 0}
+                className="p-1 hover:bg-primary/10 rounded-full disabled:opacity-50"
+              >
+                <ChevronUp size={16} />
+              </button>
+              <button
+                onClick={() => navigateSearch("next")}
+                disabled={matchedIndexes.length === 0}
+                className="p-1 hover:bg-primary/10 rounded-full disabled:opacity-50"
+              >
+                <ChevronDown size={16} />
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setSearchActive(false);
+                setSearchQuery("");
+                setMatchedIndexes([]);
+              }}
+              className="text-muted-foreground hover:text-foreground transition"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ✅ Messages */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-2 scroll-smooth">
+      <div
+        ref={messageContainerRef}
+        className="flex-1 overflow-y-auto p-5 space-y-2 scroll-smooth relative"
+      >
         {loading ? (
           <ChatSkeleton />
         ) : selectedChat?.Messages?.length ? (
           <div className="flex flex-col gap-4">
             {selectedChat.Messages.map((msg, i) => {
               const isHuman = msg.isUser;
+              const isMatched = matchedIndexes.includes(i);
               const currentDate = formatDateLabel(msg.date);
               const previousDate =
                 i > 0 ? formatDateLabel(selectedChat.Messages[i - 1].date) : null;
 
               return (
-                <div key={i} className="animate-fadeIn">
+                <div key={i} id={`msg-${i}`} className="animate-fadeIn">
                   {currentDate !== previousDate && (
                     <div className="text-center my-3">
                       <p className="inline-block px-4 py-1 text-xs font-semibold text-primary bg-primary/10 border rounded-full">
@@ -222,10 +369,14 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
 
                     <div className="md:max-w-[60%] max-w-[80%] flex flex-col gap-1">
                       <div
-                        className={`px-3 py-2 rounded-2xl text-sm leading-relaxed shadow-sm transition-all ${
+                        className={`px-3 py-2 rounded-2xl text-sm leading-relaxed shadow-sm transition-all duration-300 ${
                           isHuman
                             ? "bg-muted text-foreground rounded-bl-none"
                             : "bg-primary/20 text-foreground rounded-br-none"
+                        } ${
+                          isMatched
+                            ? "bg-primary/80"
+                            : ""
                         }`}
                         dangerouslySetInnerHTML={{
                           __html: formatMessage(msg?.textBody || ""),
@@ -246,11 +397,33 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
             No messages yet. Start the conversation!
           </p>
         )}
+
+        {/* 🆕 Scroll Buttons */}
+        {showScrollButtons && (
+          <div className="fixed bottom-28 right-8 flex flex-col gap-2 z-50">
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={scrollToTop}
+              className="rounded-full shadow-md hover:shadow-lg"
+            >
+              <ArrowUp size={18} />
+            </Button>
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={scrollToBottom}
+              className="rounded-full shadow-md hover:shadow-lg"
+            >
+              <ArrowDown size={18} />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* ✅ Footer */}
       {!selectedChat.isAIControl && (
-        <div className="p-3 border-b bg-primary/5 text-center space-y-2">
+        <div className="p-3 border-t bg-primary/5 text-center space-y-2">
           <p className="text-xs text-muted-foreground">
             Allow the AI Agent to take over this chat and respond automatically.
           </p>
@@ -272,7 +445,7 @@ const ChatMenu = ({ selectedChat, setSelectedChat, formatMessage, setShowChat })
         </div>
       )}
 
-      {/* Chat Controls */}
+      {/* ✅ Chat Controls */}
       <div className="flex items-center justify-between p-4">
         {selectedChat.isAIControl ? (
           <>
