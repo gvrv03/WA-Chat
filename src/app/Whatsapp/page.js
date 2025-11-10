@@ -49,7 +49,9 @@ export default function Home() {
     if (!phoneId) return;
 
     fetchMessages(true);
-    const eventSource = new EventSource(`/api/realtime?collection=CPID${phoneId}`);
+    const eventSource = new EventSource(
+      `/api/realtime?collection=CPID${phoneId}`
+    );
     eventSource.onmessage = () => fetchMessages(false);
     eventSource.onerror = (err) => console.error("SSE Error:", err);
 
@@ -67,14 +69,18 @@ export default function Home() {
       if (!prev) return updated;
 
       const messagesChanged =
-        JSON.stringify(updated.Messages) !== JSON.stringify(prev.Messages);
+        JSON.stringify(prev.Messages) !== JSON.stringify(updated.Messages);
 
-      // ✅ Sync only message updates, preserve local state like isAIControl
-      if (messagesChanged) {
-        return { ...prev, Messages: updated.Messages };
-      }
-
-      return prev;
+      // ✅ Only update messages and new fields, not local control toggles
+      return {
+        ...prev,
+        ...(messagesChanged ? { Messages: updated.Messages } : {}),
+        // Keep local `isAIControl` if recently toggled (avoid overwrite)
+        isAIControl:
+          prev.isAIControl !== updated.isAIControl && !prev._justToggled
+            ? updated.isAIControl
+            : prev.isAIControl,
+      };
     });
   }, [chats]);
 
