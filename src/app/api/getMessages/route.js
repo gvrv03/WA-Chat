@@ -19,7 +19,7 @@ export async function GET(req) {
     const data = await db
       .collection(collectionName)
       .find({})
-      .sort({ _id: -1 }) // or `_id: -1` if you don't have createdAt
+      .sort({ updatedAt: -1 }) // or `_id: -1` if you don't have createdAt
       .toArray();
 
     return NextResponse.json(data || []);
