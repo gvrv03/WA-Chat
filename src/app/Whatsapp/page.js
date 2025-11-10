@@ -1,90 +1,86 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import DOMPurify from "dompurify";
-import { User, Bot } from "lucide-react";
 import { useStore } from "@/context/StoreContext";
 import ChatMenu from "@/components/WhatsApp/ChatMenu";
 import ChatList from "@/components/WhatsApp/ChatList";
 
 export default function Home() {
-  const [displayedChats, setDisplayedChats] = useState([]);
+  const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [showChat, setShowChat] = useState(false);
-  const messagesEndRef = useRef(null);
   const { selectedAppDetails } = useStore();
+  const messagesEndRef = useRef(null);
   const BATCH_SIZE = 10;
 
-  /** ✅ Auto Scroll to Latest Message */
-  const scrollToBottom = () => {
+  /** ✅ Scroll to Latest Message */
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [selectedChat?.Messages]);
+  }, []);
 
   /** ✅ Fetch Messages */
   const fetchMessages = useCallback(
     async (initial = false) => {
-      if (!selectedAppDetails?.MPhoneNoId) return;
+      const phoneId = selectedAppDetails?.MPhoneNoId;
+      if (!phoneId) return;
 
       if (initial) setLoading(true);
-
       try {
-        const res = await fetch(
-          `/api/getMessages?collection=CPID${selectedAppDetails.MPhoneNoId}`
-        );
-
+        const res = await fetch(`/api/getMessages?collection=CPID${phoneId}`);
         if (!res.ok) throw new Error("Failed to fetch messages");
 
         const data = await res.json();
-        console.log("Fetched Messages:", data);
-
-        setDisplayedChats((data || []).slice(0, BATCH_SIZE));
-        setTimeout(scrollToBottom, 100);
-      } catch (error) {
-        console.error("Error fetching messages:", error);
+        setChats(Array.isArray(data) ? data : []);
+        if (initial) setTimeout(scrollToBottom, 100);
+      } catch (err) {
+        console.error("Error fetching messages:", err);
       } finally {
         if (initial) setLoading(false);
       }
     },
-    [selectedAppDetails?.MPhoneNoId]
+    [selectedAppDetails?.MPhoneNoId, scrollToBottom]
   );
 
-  /** ✅ Realtime Updates with EventSource */
+  /** ✅ Real-time Updates via SSE */
   useEffect(() => {
-    if (!selectedAppDetails?.MPhoneNoId) return;
-    fetchMessages(true);
-    const eventSource = new EventSource(
-      `/api/realtime?collection=CPID${selectedAppDetails.MPhoneNoId}`
-    );
+    const phoneId = selectedAppDetails?.MPhoneNoId;
+    if (!phoneId) return;
 
+    fetchMessages(true);
+    const eventSource = new EventSource(`/api/realtime?collection=CPID${phoneId}`);
     eventSource.onmessage = () => fetchMessages(false);
     eventSource.onerror = (err) => console.error("SSE Error:", err);
 
-    return () => {
-      eventSource.close();
-    };
-  }, [fetchMessages]);
+    return () => eventSource.close();
+  }, [fetchMessages, selectedAppDetails?.MPhoneNoId]);
 
+  /** ✅ Keep selectedChat synced safely */
   useEffect(() => {
     if (!selectedChat) return;
-    const updated = displayedChats.find(
-      (c) => c.sessionId === selectedChat.sessionId
-    );
-    if (
-      updated &&
-      JSON.stringify(updated.Messages) !== JSON.stringify(selectedChat.Messages)
-    ) {
-      setSelectedChat(updated);
-    }
-  }, [displayedChats]);
 
-  /** ✅ Sanitize and Format Message Text */
-  const formatMessage = (text = "") =>
-    DOMPurify.sanitize(
+    const updated = chats.find((c) => c.sessionId === selectedChat.sessionId);
+    if (!updated) return;
+
+    setSelectedChat((prev) => {
+      if (!prev) return updated;
+
+      const messagesChanged =
+        JSON.stringify(updated.Messages) !== JSON.stringify(prev.Messages);
+
+      // ✅ Sync only message updates, preserve local state like isAIControl
+      if (messagesChanged) {
+        return { ...prev, Messages: updated.Messages };
+      }
+
+      return prev;
+    });
+  }, [chats]);
+
+  /** ✅ Sanitize & Format Message */
+  const formatMessage = useCallback((text = "") => {
+    return DOMPurify.sanitize(
       text
         .replace(/\*(.*?)\*/g, "<strong>$1</strong>")
         .replace(/_(.*?)_/g, "<em>$1</em>")
@@ -92,16 +88,25 @@ export default function Home() {
         .replace(/`(.*?)`/g, "<code>$1</code>")
         .replace(/\n/g, "<br/>")
     );
+  }, []);
 
-  /** ✅ Filter Chats by Search Term */
-  const filteredChats = displayedChats.filter((chat) =>
-    (chat?.userName || chat?.sessionId || "")
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+  /** ✅ Filter Chats (Memoized) */
+  const filteredChats = useMemo(() => {
+    if (!searchTerm) return chats.slice(0, BATCH_SIZE);
+    return chats.filter((chat) =>
+      (chat?.userName || chat?.sessionId || "")
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase())
+    );
+  }, [searchTerm, chats]);
+
+  /** ✅ Auto-scroll when messages update */
+  useEffect(() => {
+    if (selectedChat?.Messages?.length) scrollToBottom();
+  }, [selectedChat?.Messages?.length, scrollToBottom]);
 
   return (
-    <section className="flex h-screen flex-col md:flex-row bg-background text-foreground">
+    <section className="flex h-screen flex-col md:flex-row bg-background text-foreground transition-all duration-300 ease-in-out">
       <ChatList
         showChat={showChat}
         searchTerm={searchTerm}
@@ -114,7 +119,6 @@ export default function Home() {
         formatMessage={formatMessage}
       />
 
-      {/* ✅ Chat Window (Right Section) */}
       <ChatMenu
         selectedChat={selectedChat}
         setSelectedChat={setSelectedChat}

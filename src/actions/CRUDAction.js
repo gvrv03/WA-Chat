@@ -2,29 +2,6 @@
 import { connectToDatabase } from "@/config/MongoDB";
 import { revalidatePath } from "next/cache";
 
-export const AddDataToCollection = async (
-  collection,
-  data,
-  permittedUserIds,
-  ID
-) => {
-  const { db } = await connectToDatabase();
-  const collectionName = db.collection(collection);
-  try {
-    const result = await collectionName.insertOne({
-      ...data,
-      _id: ID,
-      permissions: {
-        canUpdate: permittedUserIds, // List of user IDs who can update
-        canDelete: permittedUserIds, // List of user IDs who can delete
-        canRead: permittedUserIds, // List of user IDs who can delete
-      },
-    });
-    return result;
-  } catch (error) {
-    throw new Error(error.message);
-  }
-};
 
 export const FetchDataToCollection = async (collection, query = {}) => {
   const { db } = await connectToDatabase();
@@ -49,6 +26,31 @@ export const FetchSingleDocs = async (collection, queryObject) => {
 
     return result;
   } catch (error) {
+    throw new Error(error.message);
+  }
+};
+
+/** ✅ Update Document (with automatic updatedAt) */
+export const UpdateDocument = async (collection, filter, updateData) => {
+  const { db } = await connectToDatabase();
+  const collectionName = db.collection(collection);
+
+  try {
+    const result = await collectionName.updateOne(filter, {
+      $set: {
+        ...updateData,
+        updatedAt: new Date(), // ✅ Always update timestamp
+      },
+    });
+
+    if (result.matchedCount === 0) {
+      throw new Error("No document found to update");
+    }
+
+    revalidatePath("/");
+    return { success: true, matched: result.matchedCount, modified: result.modifiedCount };
+  } catch (error) {
+    console.error("Error updating document:", error);
     throw new Error(error.message);
   }
 };
