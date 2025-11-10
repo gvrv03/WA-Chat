@@ -36,6 +36,9 @@ export const POST = async (req) => {
               time: newMessage.time,
             },
           },
+          $set: {
+            updatedAt: new Date(), // ✅ Track when this chat was last updated
+          },
         }
       );
 
