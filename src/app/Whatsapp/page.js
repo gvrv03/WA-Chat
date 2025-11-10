@@ -1,17 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { FetchDataToCollection } from "@/actions/CRUDAction";
-import { useStore } from "@/context/StoreContext";
+import { useCallback, useEffect, useRef, useState } from "react";
 import DOMPurify from "dompurify";
-import {
-  User,
-  Bot,
-} from "lucide-react";
+import { User, Bot } from "lucide-react";
+import { useStore } from "@/context/StoreContext";
 import ChatMenu from "@/components/WhatsApp/ChatMenu";
 import ChatList from "@/components/WhatsApp/ChatList";
 
 export default function Home() {
-  const [chats, setChats] = useState([]);
   const [displayedChats, setDisplayedChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -22,53 +17,74 @@ export default function Home() {
   const BATCH_SIZE = 10;
 
   /** ✅ Auto Scroll to Latest Message */
-  useEffect(() => {
+  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
   }, [selectedChat?.Messages]);
 
-  /** ✅ Fetch Chats from DB */
-  const getChats = async () => {
-    try {
-      setLoading(true);
-      const res = await FetchDataToCollection(
-        `CPID${selectedAppDetails?.MPhoneNoId}`,
-        {} //Query
-      );
-      setChats(res || []);
-      setDisplayedChats((res || []).slice(0, BATCH_SIZE));
-    } catch (error) {
-      console.error("Error fetching chats:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  /** ✅ Fetch Messages */
+  const fetchMessages = useCallback(
+    async (initial = false) => {
+      if (!selectedAppDetails?.MPhoneNoId) return;
+
+      if (initial) setLoading(true);
+
+      try {
+        const res = await fetch(
+          `/api/getMessages?collection=CPID${selectedAppDetails.MPhoneNoId}`
+        );
+
+        if (!res.ok) throw new Error("Failed to fetch messages");
+
+        const data = await res.json();
+        console.log("Fetched Messages:", data);
+
+        setDisplayedChats((data || []).slice(0, BATCH_SIZE));
+        setTimeout(scrollToBottom, 100);
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+      } finally {
+        if (initial) setLoading(false);
+      }
+    },
+    [selectedAppDetails?.MPhoneNoId]
+  );
+
+  /** ✅ Realtime Updates with EventSource */
+  useEffect(() => {
+    if (!selectedAppDetails?.MPhoneNoId) return;
+    fetchMessages(true);
+    const eventSource = new EventSource(
+      `/api/realtime?collection=CPID${selectedAppDetails.MPhoneNoId}`
+    );
+
+    eventSource.onmessage = () => fetchMessages(false);
+    eventSource.onerror = (err) => console.error("SSE Error:", err);
+
+    return () => {
+      eventSource.close();
+    };
+  }, [fetchMessages]);
 
   useEffect(() => {
-    getChats();
-  }, []);
+    if (!selectedChat) return;
+    const updated = displayedChats.find(
+      (c) => c.sessionId === selectedChat.sessionId
+    );
+    if (
+      updated &&
+      JSON.stringify(updated.Messages) !== JSON.stringify(selectedChat.Messages)
+    ) {
+      setSelectedChat(updated);
+    }
+  }, [displayedChats]);
 
-  /** ✅ Date Formatter (Today, Yesterday, etc.) */
-  const formatDateLabel = (dateString) => {
-    if (!dateString) return "";
-    const mDate = new Date(dateString).setHours(0, 0, 0, 0);
-    const tDate = new Date().setHours(0, 0, 0, 0);
-    const yDate = new Date(Date.now() - 86400000).setHours(0, 0, 0, 0);
-    const tmDate = new Date(Date.now() + 86400000).setHours(0, 0, 0, 0);
-
-    if (mDate === tDate) return "Today";
-    if (mDate === yDate) return "Yesterday";
-    if (mDate === tmDate) return "Tomorrow";
-
-    return new Date(dateString).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  /** ✅ Format Text (Bold, Code, Linebreaks, etc.) */
-  const formatMessage = (text = "") => {
-    return DOMPurify.sanitize(
+  /** ✅ Sanitize and Format Message Text */
+  const formatMessage = (text = "") =>
+    DOMPurify.sanitize(
       text
         .replace(/\*(.*?)\*/g, "<strong>$1</strong>")
         .replace(/_(.*?)_/g, "<em>$1</em>")
@@ -76,58 +92,8 @@ export default function Home() {
         .replace(/`(.*?)`/g, "<code>$1</code>")
         .replace(/\n/g, "<br/>")
     );
-  };
 
-  /** ✅ Render Messages with Date Separators */
-  const renderMessages = (messages = []) => (
-    <div className="flex flex-col gap-4">
-      {messages.map((msg, i) => {
-        const isHuman = msg.isUser;
-        const currentDate = formatDateLabel(msg.date);
-        const previousDate =
-          i > 0 ? formatDateLabel(messages[i - 1].date) : null;
-
-        return (
-          <div key={i}>
-            {currentDate !== previousDate && (
-              <div className="text-center mb-2 w-full grid place-items-center my-2 font-semibold text-xs">
-                <p className=" text-primary w-fit p-1 bg-primary/10 px-5  border rounded-full ">
-                  {currentDate}
-                </p>
-              </div>
-            )}
-            <div
-              className={`flex items-end gap-2 ${
-                isHuman ? "self-start" : "self-end flex-row-reverse"
-              }`}
-            >
-              <div className="w-8 h-8 flex items-center justify-center bg-primary/10 rounded-full">
-                {isHuman ? <User size={18} /> : <Bot size={18} />}
-              </div>
-
-              <div className="md:max-w-[60%] max-w-[80%] flex flex-col gap-1">
-                <div
-                  className={`px-3 py-2 rounded-lg text-xs leading-relaxed break-words ${
-                    isHuman
-                      ? "bg-muted text-foreground rounded-bl-none"
-                      : "bg-primary/20 text-white rounded-br-none"
-                  }`}
-                  dangerouslySetInnerHTML={{
-                    __html: formatMessage(msg?.textBody),
-                  }}
-                />
-                <span className="text-[10px] text-primary/60 font-semibold">
-                  {msg?.time}
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-      <div ref={messagesEndRef} />
-    </div>
-  );
-
+  /** ✅ Filter Chats by Search Term */
   const filteredChats = displayedChats.filter((chat) =>
     (chat?.userName || chat?.sessionId || "")
       .toLowerCase()
@@ -135,10 +101,9 @@ export default function Home() {
   );
 
   return (
-    <section className="flex h-screen flex-col md:flex-row bg-background text-foreground ">
+    <section className="flex h-screen flex-col md:flex-row bg-background text-foreground">
       <ChatList
         showChat={showChat}
-        getChats={getChats}
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         loading={loading}
@@ -152,9 +117,9 @@ export default function Home() {
       {/* ✅ Chat Window (Right Section) */}
       <ChatMenu
         selectedChat={selectedChat}
-        setShowChat={setShowChat}
         setSelectedChat={setSelectedChat}
-        renderMessages={renderMessages}
+        setShowChat={setShowChat}
+        formatMessage={formatMessage}
       />
     </section>
   );
