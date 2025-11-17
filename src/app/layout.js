@@ -10,6 +10,12 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
+      <head>
+        {/* inside head */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0ea5a4" />
+        <link rel="apple-touch-icon" href="https://brenzo-ai.vercel.app/hexagon.svg" />
+      </head>
       <body className={` max-w-6xl mx-auto `}>
         <StoreProvider>
           <AuthProvider>{children}</AuthProvider>
